@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Solar Princess</title>
+  <style>
+    body {
+      margin: 0;
+      background: linear-gradient(180deg, #87CEEB, #FFD700);
+      font-family: 'Comic Sans MS', cursive;
+      overflow: hidden;
+      user-select: none;
+    }
+    #castle {
+      position: fixed;
+      bottom: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 160px;
+    }
+    #battery {
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: white;
+      border-radius: 20px;
+      padding: 10px 30px;
+      font-size: 24px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    }
+    #message {
+      position: fixed;
+      top: 90px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 28px;
+      color: white;
+      text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+      white-space: nowrap;
+    }
+    .sun {
+      position: fixed;
+      font-size: 100px;
+      cursor: pointer;
+      transition: transform 0.1s;
+      animation: fall linear forwards;
+    }
+    .sun:active { transform: scale(1.3); }
+    @keyframes fall {
+      from { top: -80px; }
+      to   { top: 110%; }
+    }
+    #winner {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(255,220,50,0.85);
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-size: 48px;
+      text-align: center;
+    }
+    #winner button {
+      margin-top: 30px;
+      font-size: 28px;
+      padding: 14px 36px;
+      border: none;
+      border-radius: 20px;
+      background: #ff69b4;
+      color: white;
+      cursor: pointer;
+      font-family: inherit;
+    }
+  </style>
+</head>
+<body>
+
+<div id="battery">☀️ Power: <span id="power">0</span> / 10</div>
+<div id="message">Tap the suns to power the castle! 👑</div>
+<div id="castle">🏰</div>
+
+<div id="winner">
+  <div>🌞👑 Hooray Princess! 👑🌞</div>
+  <div style="font-size:32px; margin-top:16px">The castle is powered up! ⚡🏰✨</div>
+  <button onclick="resetGame()">Play Again! 🌈</button>
+</div>
+
+<script>
+  let power = 0;
+  let suns = [];
+
+  function spawnSun() {
+    const sun = document.createElement('div');
+    sun.className = 'sun';
+    sun.textContent = '☀️';
+    const duration = 6 + Math.random() * 4;
+    sun.style.left = (5 + Math.random() * 85) + 'vw';
+    sun.style.animationDuration = duration + 's';
+    sun.addEventListener('click', () => catchSun(sun));
+    document.body.appendChild(sun);
+    suns.push(sun);
+    sun.addEventListener('animationend', () => sun.remove());
+  }
+
+  function catchSun(sun) {
+    sun.remove();
+    power = Math.min(power + 1, 10);
+    document.getElementById('power').textContent = power;
+    showSparkle(sun.style.left);
+    if (power >= 10) showWinner();
+  }
+
+  function showSparkle(left) {
+    const s = document.createElement('div');
+    s.textContent = '✨';
+    s.style.cssText = `position:fixed;font-size:50px;left:${left};top:40%;pointer-events:none;
+      animation:fall 0.6s ease-out forwards;opacity:1;`;
+    document.body.appendChild(s);
+    setTimeout(() => s.remove(), 600);
+  }
+
+  function showWinner() {
+    clearInterval(spawnInterval);
+    document.getElementById('winner').style.display = 'flex';
+  }
+
+  function resetGame() {
+    power = 0;
+    document.getElementById('power').textContent = 0;
+    document.getElementById('winner').style.display = 'none';
+    suns.forEach(s => s.remove());
+    suns = [];
+    spawnInterval = setInterval(spawnSun, 1200);
+  }
+
+  let spawnInterval = setInterval(spawnSun, 1200);
+</script>
+</body>
+</html>
+```
+
+---
+
+### Step 4: Save the file
+Press **Ctrl + S**
+
+---
+
+### Step 5: Preview it!
+In the terminal type:
+```
+npx serve .
