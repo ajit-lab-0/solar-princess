@@ -2,338 +2,83 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Solar Princess</title>
+  <title>Princess Games</title>
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
   <style>
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      background: linear-gradient(180deg, #87CEEB, #FFD700);
+      min-height: 100vh;
+      background: linear-gradient(180deg, #87CEEB, #ffb6e6);
       font-family: 'Comic Sans MS', cursive;
-      overflow: hidden;
-      user-select: none;
-    }
-
-    /* PRINCESS PICKER */
-    #picker {
-      position: fixed;
-      inset: 0;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      background: linear-gradient(180deg, #87CEEB, #FFD700);
-      z-index: 100;
+      user-select: none;
     }
-    #picker h1 {
-      font-size: 36px;
+    h1 {
+      font-size: 38px;
       color: white;
-      text-shadow: 2px 2px 6px rgba(0,0,0,0.3);
-      margin-bottom: 40px;
+      text-shadow: 2px 2px 6px rgba(0,0,0,0.25);
+      margin-bottom: 50px;
       text-align: center;
+      padding: 0 20px;
     }
-    .princess-options {
+    .game-options {
       display: flex;
-      gap: 30px;
+      gap: 36px;
       flex-wrap: wrap;
       justify-content: center;
+      padding: 0 20px;
     }
-    .princess-btn {
+    .game-btn {
       display: flex;
       flex-direction: column;
       align-items: center;
       background: white;
       border: none;
       border-radius: 30px;
-      padding: 20px 28px;
+      padding: 30px 36px;
       cursor: pointer;
-      box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+      box-shadow: 0 6px 24px rgba(0,0,0,0.15);
       transition: transform 0.15s, box-shadow 0.15s;
+      text-decoration: none;
       font-family: inherit;
     }
-    .princess-btn:active {
-      transform: scale(1.1);
-      box-shadow: 0 10px 28px rgba(0,0,0,0.2);
+    .game-btn:active {
+      transform: scale(1.07);
+      box-shadow: 0 12px 32px rgba(0,0,0,0.2);
     }
-    .princess-btn .icon { font-size: 80px; }
-    .princess-btn .name {
-      margin-top: 12px;
-      font-size: 22px;
+    .game-btn .icon { font-size: 90px; line-height: 1; }
+    .game-btn .name {
+      margin-top: 16px;
+      font-size: 24px;
       color: #cc44aa;
       font-weight: bold;
-    }
-
-    /* GAME */
-    #game { display: none; }
-
-    #castle-area {
-      position: fixed;
-      bottom: 0;
-      left: 50%;
-      transform: translateX(-50%);
-      display: flex;
-      align-items: flex-end;
-      gap: 10px;
-    }
-    #castle { font-size: 160px; line-height: 1; }
-    #princess-display { font-size: 120px; line-height: 1; }
-
-    #battery-wrap {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      margin-bottom: 10px;
-    }
-    #battery-body {
-      width: 36px;
-      height: 120px;
-      border: 4px solid #333;
-      border-radius: 6px;
-      background: white;
-      position: relative;
-      overflow: hidden;
-    }
-    #battery-body::before {
-      content: '';
-      position: absolute;
-      top: -10px;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 16px;
-      height: 10px;
-      background: #333;
-      border-radius: 3px 3px 0 0;
-    }
-    #battery-fill {
-      position: absolute;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      height: 0%;
-      background: #4cdb6e;
-      transition: height 0.3s ease, background 0.3s ease;
-    }
-    #battery-label {
-      margin-top: 6px;
-      font-size: 16px;
-      color: white;
-      text-shadow: 1px 1px 3px rgba(0,0,0,0.4);
-      font-weight: bold;
-    }
-    #message {
-      position: fixed;
-      top: 90px;
-      left: 50%;
-      transform: translateX(-50%);
-      font-size: 26px;
-      color: white;
-      text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
-      white-space: nowrap;
-    }
-
-    .sun {
-      position: fixed;
-      font-size: 100px;
-      cursor: pointer;
-      animation: fall linear forwards;
-    }
-    .sun:active { transform: scale(1.3); }
-    @keyframes fall {
-      from { top: -120px; }
-      to   { top: 110%; }
-    }
-
-    #winner {
-      display: none;
-      position: fixed;
-      inset: 0;
-      background: rgba(255,220,50,0.88);
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      font-size: 48px;
       text-align: center;
-      z-index: 50;
     }
-    #winner .princess-big { font-size: 100px; margin-bottom: 10px; }
-    #winner button {
-      margin-top: 30px;
-      font-size: 28px;
-      padding: 14px 36px;
-      border: none;
-      border-radius: 20px;
-      background: #ff69b4;
-      color: white;
-      cursor: pointer;
-      font-family: inherit;
+    .game-btn .tagline {
+      margin-top: 6px;
+      font-size: 15px;
+      color: #aaa;
     }
   </style>
 </head>
 <body>
-
-<!-- PRINCESS PICKER SCREEN -->
-<div id="picker">
-  <h1>👑 Who is your princess today? 👑</h1>
-  <div class="princess-options">
-    <button class="princess-btn" onclick="choosePrincess('👗', 'Cinderella', '#6699ff')">
-      <span class="icon">👗</span>
-      <span class="name">Cinderella</span>
-    </button>
-    <button class="princess-btn" onclick="choosePrincess('🌸', 'Aurora', '#ff99cc')">
-      <span class="icon">🌸</span>
-      <span class="name">Aurora</span>
-    </button>
-    <button class="princess-btn" onclick="choosePrincess('🧜‍♀️', 'Ariel', '#33ccaa')">
-      <span class="icon">🧜‍♀️</span>
-      <span class="name">Ariel</span>
-    </button>
+  <h1>✨ Choose your game! ✨</h1>
+  <div class="game-options">
+    <a class="game-btn" href="solar-princess.html">
+      <span class="icon">☀️👑</span>
+      <span class="name">Solar Princess</span>
+      <span class="tagline">Power the castle!</span>
+    </a>
+    <a class="game-btn" href="moana-sailing.html">
+      <span class="icon">🌊⛵</span>
+      <span class="name">Moana Sailing</span>
+      <span class="tagline">Sail the ocean!</span>
+    </a>
   </div>
-</div>
-
-<!-- GAME SCREEN -->
-<div id="game">
-  <div id="message">Tap the suns to power the castle! 👑</div>
-
-  <div id="castle-area">
-    <div id="princess-display"></div>
-    <div id="castle">🏰</div>
-    <div id="battery-wrap">
-      <div id="battery-body"><div id="battery-fill"></div></div>
-      <div id="battery-label"><span id="power">0</span>/10</div>
-    </div>
-  </div>
-</div>
-
-<!-- WINNER SCREEN -->
-<div id="winner">
-  <div class="princess-big" id="winner-princess"></div>
-  <div>🌞 Hooray Princess! 🌞</div>
-  <div style="font-size:32px; margin-top:16px">The castle is powered up! ⚡🏰✨</div>
-  <button onclick="resetGame()">Play Again! 🌈</button>
-</div>
-
-<script>
-  let power = 0;
-  let suns = [];
-  let spawnInterval;
-  let chosenIcon = '';
-  let chosenName = '';
-
-  function choosePrincess(icon, name, color) {
-    chosenIcon = icon;
-    chosenName = name;
-    document.getElementById('princess-display').textContent = icon;
-    document.getElementById('winner-princess').textContent = icon;
-    document.getElementById('message').textContent =
-      `Go ${name}! Tap the suns to power the castle! 👑`;
-    document.body.style.background =
-      `linear-gradient(180deg, #87CEEB, ${color})`;
-    document.getElementById('picker').style.display = 'none';
-    document.getElementById('game').style.display = 'block';
-    spawnInterval = setInterval(spawnSun, 1200);
-  }
-
-  function spawnSun() {
-    const sun = document.createElement('div');
-    sun.className = 'sun';
-    sun.textContent = '☀️';
-    const duration = 6 + Math.random() * 4;
-    sun.style.left = (5 + Math.random() * 85) + 'vw';
-    sun.style.animationDuration = duration + 's';
-    sun.addEventListener('click', () => catchSun(sun));
-    document.body.appendChild(sun);
-    suns.push(sun);
-    sun.addEventListener('animationend', () => sun.remove());
-  }
-
-  function playTwinkle() {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const notes = [1047, 1319, 1568, 2093]; // C6, E6, G6, C7
-    notes.forEach((freq, i) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.type = 'sine';
-      osc.frequency.value = freq;
-      const start = ctx.currentTime + i * 0.08;
-      gain.gain.setValueAtTime(0, start);
-      gain.gain.linearRampToValueAtTime(0.3, start + 0.03);
-      gain.gain.exponentialRampToValueAtTime(0.001, start + 0.25);
-      osc.start(start);
-      osc.stop(start + 0.25);
-    });
-  }
-
-  function updateBattery() {
-    const pct = power * 10;
-    const fill = document.getElementById('battery-fill');
-    fill.style.height = pct + '%';
-    fill.style.background = power <= 3 ? '#e84040' : power <= 6 ? '#f0a500' : '#4cdb6e';
-  }
-
-  function catchSun(sun) {
-    sun.remove();
-    power = Math.min(power + 1, 10);
-    document.getElementById('power').textContent = power;
-    updateBattery();
-    showSparkle(sun.style.left);
-    playTwinkle();
-    if (power >= 10) showWinner();
-  }
-
-  function showSparkle(left) {
-    const s = document.createElement('div');
-    s.textContent = '✨';
-    s.style.cssText = `position:fixed;font-size:50px;left:${left};top:40%;
-      pointer-events:none;animation:fall 0.6s ease-out forwards;`;
-    document.body.appendChild(s);
-    setTimeout(() => s.remove(), 600);
-  }
-
-  function playVictory() {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    // Triumphant fanfare: notes with timings and durations
-    const sequence = [
-      [523, 0.00, 0.15], [523, 0.15, 0.15], [523, 0.30, 0.15],
-      [659, 0.45, 0.30], [587, 0.75, 0.15], [659, 0.90, 0.50],
-      [784, 1.40, 0.60], [1047,2.00, 0.80],
-    ];
-    sequence.forEach(([freq, when, dur]) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.type = 'triangle';
-      osc.frequency.value = freq;
-      const start = ctx.currentTime + when;
-      gain.gain.setValueAtTime(0, start);
-      gain.gain.linearRampToValueAtTime(0.4, start + 0.03);
-      gain.gain.exponentialRampToValueAtTime(0.001, start + dur);
-      osc.start(start);
-      osc.stop(start + dur);
-    });
-  }
-
-  function showWinner() {
-    clearInterval(spawnInterval);
-    document.getElementById('winner').style.display = 'flex';
-    playVictory();
-  }
-
-  function resetGame() {
-    power = 0;
-    document.getElementById('power').textContent = 0;
-    updateBattery();
-    document.getElementById('winner').style.display = 'none';
-    suns.forEach(s => s.remove());
-    suns = [];
-    document.getElementById('picker').style.display = 'flex';
-    document.getElementById('game').style.display = 'none';
-  }
-</script>
 </body>
 </html>
-```
-

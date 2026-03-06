@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Moana Sailing</title>
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0077cc;
+      overflow: hidden;
+      user-select: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      font-family: 'Comic Sans MS', cursive;
+    }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+
+  function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  // ---- Constants (recalculated on resize) ----
+  function WATER_Y() { return canvas.height * 0.68; }
+  function GROUND_Y() { return WATER_Y() - 1; }
+  const MOANA_X = 130;
+  const GRAVITY = 0.5;
+  const JUMP_FORCE = -16;
+
+  // ---- State ----
+  let moanaY, velY, onGround;
+  let waves, score, highScore, speed, frameCount, animFrame = 0;
+  let nextSpawn, gameState, oceanOffset;
+
+  highScore = 0;
+
+  function reset() {
+    moanaY = GROUND_Y();
+    velY = 0;
+    onGround = true;
+    waves = [];
+    score = 0;
+    speed = 4.5;
+    frameCount = 0;
+    nextSpawn = 100;
+    oceanOffset = 0;
+    gameState = 'idle';
+  }
+  reset();
+
+  // ---- Input ----
+  function handleInput() {
+    if (gameState === 'dead') {
+      reset();
+      gameState = 'playing';
+      doJump();
+      return;
+    }
+    if (gameState === 'idle') {
+      gameState = 'playing';
+      doJump();
+      return;
+    }
+    if (gameState === 'playing') doJump();
+  }
+
+  function doJump() {
+    if (onGround) {
+      velY = JUMP_FORCE;
+      onGround = false;
+      score++;
+      playJump();
+    }
+  }
+
+  document.addEventListener('click', handleInput);
+  document.addEventListener('touchstart', e => { e.preventDefault(); handleInput(); }, { passive: false });
+  document.addEventListener('keydown', e => { if (e.code === 'Space' || e.code === 'ArrowUp') { e.preventDefault(); handleInput(); } });
+
+  // ---- Update ----
+  function update() {
+    animFrame++;
+    if (gameState !== 'playing') return;
+    frameCount++;
+
+    // Speed ramp
+    speed = 4.5 + frameCount / 600;
+
+    // Ocean scroll
+    oceanOffset = (oceanOffset - speed * 0.6) % 120;
+
+    // Moana physics
+    velY += GRAVITY;
+    moanaY += velY;
+    const wy = GROUND_Y();
+    if (moanaY >= wy) {
+      moanaY = wy;
+      velY = 0;
+      onGround = true;
+    }
+
+    // Spawn waves
+    nextSpawn--;
+    if (nextSpawn <= 0) {
+      waves.push({
+        x: canvas.width + 30,
+        w: 55 + Math.random() * 30,
+        h: 70 + Math.random() * 50,
+        passed: false,
+      });
+      const minGap = Math.max(55, 90 - frameCount / 80);
+      nextSpawn = minGap + Math.random() * 50;
+    }
+
+    // Move & check waves
+    for (let i = waves.length - 1; i >= 0; i--) {
+      const wv = waves[i];
+      wv.x -= speed;
+
+      if (!wv.passed && wv.x + wv.w < MOANA_X - 20) {
+        wv.passed = true;
+        playScore();
+      }
+
+      if (wv.x + wv.w < -60) { waves.splice(i, 1); continue; }
+
+      if (collides(wv)) {
+        gameState = 'dead';
+        highScore = Math.max(highScore, score);
+        playDeath();
+      }
+    }
+  }
+
+  function collides(wv) {
+    const wy = WATER_Y();
+    // Moana hitbox (tighter than visuals)
+    const ml = MOANA_X - 22, mr = MOANA_X + 22;
+    const mt = moanaY - 72,  mb = moanaY + 10;
+    // Wave hitbox
+    const wl = wv.x + 8, wr = wv.x + wv.w - 8;
+    const wt = wy - wv.h + 10, wb = wy + 15;
+    return mr > wl && ml < wr && mb > wt && mt < wb;
+  }
+
+  // ---- Draw ----
+  function draw() {
+    const W = canvas.width, H = canvas.height;
+    const wy = WATER_Y();
+
+    // Sky
+    const sky = ctx.createLinearGradient(0, 0, 0, wy);
+    sky.addColorStop(0, '#4ab8f5');
+    sky.addColorStop(1, '#c8ecff');
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, W, wy + 10);
+
+    // Sun
+    ctx.save();
+    ctx.fillStyle = '#FFE566';
+    ctx.shadowColor = '#FFE566';
+    ctx.shadowBlur = 30;
+    ctx.beginPath();
+    ctx.arc(W - 80, 70, 40, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // Big wave obstacles (draw behind ocean surface)
+    for (const wv of waves) drawBigWave(wv, wy);
+
+    // Ocean surface
+    drawOcean(wy, W, H);
+
+    // Moana
+    drawMoana(wy);
+
+    // HUD
+    drawHUD(W);
+
+    // Overlay messages
+    if (gameState === 'idle') {
+      drawOverlay('⛵ Moana Sailing ⛵', 'Tap anywhere to start!');
+    } else if (gameState === 'dead') {
+      drawOverlay(`Wiped out! 🌊  Jumps: ${score}`, 'Tap to try again!');
+    }
+  }
+
+  function drawOcean(wy, W, H) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(0, wy);
+    for (let x = 0; x <= W; x += 3) {
+      const y = wy + Math.sin((x + oceanOffset) / 60 * Math.PI * 2) * 6
+                   + Math.sin((x + oceanOffset * 0.7) / 30 * Math.PI * 2) * 3;
+      ctx.lineTo(x, y);
+    }
+    ctx.lineTo(W, H);
+    ctx.lineTo(0, H);
+    ctx.closePath();
+    const og = ctx.createLinearGradient(0, wy, 0, H);
+    og.addColorStop(0, '#0ea5e9');
+    og.addColorStop(0.3, '#0077bb');
+    og.addColorStop(1, '#004466');
+    ctx.fillStyle = og;
+    ctx.fill();
+
+    // Scrolling foam lines
+    ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+    ctx.lineWidth = 2;
+    for (let row = 0; row < 3; row++) {
+      const rowY = wy + 30 + row * 28;
+      ctx.beginPath();
+      for (let x = 0; x <= W; x += 4) {
+        const y = rowY + Math.sin((x + oceanOffset * (1 + row * 0.3)) / 50 * Math.PI * 2) * 4;
+        x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawBigWave(wv, wy) {
+    const x = wv.x, w = wv.w, h = wv.h;
+    const top = wy - h;
+    ctx.save();
+
+    // Wave body
+    ctx.beginPath();
+    ctx.moveTo(x, wy + 10);
+    ctx.bezierCurveTo(x, top + h * 0.4, x + w * 0.3, top - 15, x + w * 0.5, top);
+    ctx.bezierCurveTo(x + w * 0.7, top + 15, x + w, top + h * 0.4, x + w, wy + 10);
+    ctx.lineTo(x + w, wy + 20);
+    ctx.lineTo(x, wy + 20);
+    ctx.closePath();
+    const wg = ctx.createLinearGradient(x, top, x, wy + 20);
+    wg.addColorStop(0, '#ffffff');
+    wg.addColorStop(0.15, '#7dd3fc');
+    wg.addColorStop(0.6, '#0284c7');
+    wg.addColorStop(1, '#01579b');
+    ctx.fillStyle = wg;
+    ctx.fill();
+
+    // Foam crest
+    ctx.beginPath();
+    ctx.ellipse(x + w * 0.5, top + 4, w * 0.38, 14, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.fill();
+
+    // Spray dots
+    for (let i = 0; i < 5; i++) {
+      const sx = x + w * 0.2 + i * (w * 0.15);
+      const sy = top - 8 - Math.abs(Math.sin(i * 1.3 + animFrame * 0.1)) * 10;
+      ctx.beginPath();
+      ctx.arc(sx, sy, 3, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255,255,255,0.7)';
+      ctx.fill();
+    }
+
+    ctx.restore();
+  }
+
+  function drawMoana(wy) {
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.shadowColor = 'rgba(0,0,0,0.55)';
+    ctx.shadowBlur = 8;
+    ctx.shadowOffsetY = 3;
+    const bob = onGround ? Math.sin(animFrame * 0.08) * 3 : 0;
+    const y = moanaY + bob;
+
+    // Boat
+    ctx.font = `${Math.min(canvas.width * 0.1, 60)}px serif`;
+    ctx.fillText('⛵', MOANA_X, y - 12);
+
+    // Moana character on the boat
+    ctx.font = `${Math.min(canvas.width * 0.07, 38)}px serif`;
+    ctx.fillText('👧🏾', MOANA_X + 4, y - 62);
+
+    ctx.restore();
+  }
+
+  function drawHUD(W) {
+    ctx.save();
+    ctx.font = 'bold 26px Comic Sans MS, cursive';
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#003355';
+    ctx.fillText(`Jumps: ${score}`, W - 16, 40);
+    if (highScore > 0) {
+      ctx.font = '18px Comic Sans MS, cursive';
+      ctx.fillStyle = '#005588';
+      ctx.fillText(`Best: ${highScore}`, W - 16, 64);
+    }
+    ctx.restore();
+  }
+
+  function drawOverlay(line1, line2) {
+    const W = canvas.width, H = canvas.height;
+    const bw = Math.min(W - 40, 420), bh = 110;
+    const bx = W / 2 - bw / 2, by = H / 2 - bh / 2;
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,50,100,0.82)';
+    // Rounded rect
+    const r = 20;
+    ctx.beginPath();
+    ctx.moveTo(bx + r, by);
+    ctx.lineTo(bx + bw - r, by);
+    ctx.quadraticCurveTo(bx + bw, by, bx + bw, by + r);
+    ctx.lineTo(bx + bw, by + bh - r);
+    ctx.quadraticCurveTo(bx + bw, by + bh, bx + bw - r, by + bh);
+    ctx.lineTo(bx + r, by + bh);
+    ctx.quadraticCurveTo(bx, by + bh, bx, by + bh - r);
+    ctx.lineTo(bx, by + r);
+    ctx.quadraticCurveTo(bx, by, bx + r, by);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = 'white';
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 24px Comic Sans MS, cursive';
+    ctx.fillText(line1, W / 2, H / 2 - 12);
+    ctx.font = '18px Comic Sans MS, cursive';
+    ctx.fillStyle = '#aaddff';
+    ctx.fillText(line2, W / 2, H / 2 + 18);
+    ctx.restore();
+  }
+
+  // ---- Sounds ----
+  function playJump() {
+    const a = new (window.AudioContext || window.webkitAudioContext)();
+    const o = a.createOscillator(), g = a.createGain();
+    o.connect(g); g.connect(a.destination);
+    o.type = 'sine';
+    o.frequency.setValueAtTime(350, a.currentTime);
+    o.frequency.exponentialRampToValueAtTime(600, a.currentTime + 0.12);
+    g.gain.setValueAtTime(0.2, a.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, a.currentTime + 0.18);
+    o.start(); o.stop(a.currentTime + 0.18);
+  }
+
+  function playScore() {
+    const a = new (window.AudioContext || window.webkitAudioContext)();
+    const o = a.createOscillator(), g = a.createGain();
+    o.connect(g); g.connect(a.destination);
+    o.type = 'sine';
+    o.frequency.value = 900;
+    g.gain.setValueAtTime(0.12, a.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, a.currentTime + 0.1);
+    o.start(); o.stop(a.currentTime + 0.1);
+  }
+
+  function playDeath() {
+    const a = new (window.AudioContext || window.webkitAudioContext)();
+    [250, 180, 110].forEach((f, i) => {
+      const o = a.createOscillator(), g = a.createGain();
+      o.connect(g); g.connect(a.destination);
+      o.type = 'sawtooth'; o.frequency.value = f;
+      const t = a.currentTime + i * 0.14;
+      g.gain.setValueAtTime(0.25, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
+      o.start(t); o.stop(t + 0.14);
+    });
+  }
+
+  // ---- Loop ----
+  function loop() {
+    update();
+    draw();
+    requestAnimationFrame(loop);
+  }
+  loop();
+</script>
+</body>
+</html>
