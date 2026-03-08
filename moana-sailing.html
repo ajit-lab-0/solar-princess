@@ -5,6 +5,7 @@
   <title>Moana Sailing</title>
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <link href="https://fonts.googleapis.com/css2?family=Comic+Neue:wght@400;700&display=swap" rel="stylesheet">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -15,7 +16,7 @@
       align-items: center;
       justify-content: center;
       height: 100vh;
-      font-family: 'Comic Sans MS', cursive;
+      font-family: 'Comic Neue', 'Comic Sans MS', cursive;
     }
     canvas { display: block; }
   </style>
@@ -295,12 +296,12 @@
 
   function drawHUD(W) {
     ctx.save();
-    ctx.font = 'bold 26px Comic Sans MS, cursive';
+    ctx.font = 'bold 26px Comic Neue, Comic Sans MS, cursive';
     ctx.textAlign = 'right';
     ctx.fillStyle = '#003355';
     ctx.fillText(`Jumps: ${score}`, W - 16, 40);
     if (highScore > 0) {
-      ctx.font = '18px Comic Sans MS, cursive';
+      ctx.font = '18px Comic Neue, Comic Sans MS, cursive';
       ctx.fillStyle = '#005588';
       ctx.fillText(`Best: ${highScore}`, W - 16, 64);
     }
@@ -330,9 +331,9 @@
 
     ctx.fillStyle = 'white';
     ctx.textAlign = 'center';
-    ctx.font = 'bold 24px Comic Sans MS, cursive';
+    ctx.font = 'bold 24px Comic Neue, Comic Sans MS, cursive';
     ctx.fillText(line1, W / 2, H / 2 - 12);
-    ctx.font = '18px Comic Sans MS, cursive';
+    ctx.font = '18px Comic Neue, Comic Sans MS, cursive';
     ctx.fillStyle = '#aaddff';
     ctx.fillText(line2, W / 2, H / 2 + 18);
     ctx.restore();
