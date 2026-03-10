@@ -42,7 +42,22 @@
 
   // ---- Audio ----
   let audioCtx = null;
+  const bgmAudio      = new Audio('keepy uppy bgm.m4a');
+  bgmAudio.loop       = true;
+  bgmAudio.volume     = 0.6;
   const gameOverAudio = new Audio('keepy uppy.m4a');
+
+  function startBGM() {
+    gameOverAudio.pause();
+    gameOverAudio.currentTime = 0;
+    bgmAudio.currentTime = 0;
+    bgmAudio.play().catch(() => {});
+  }
+
+  function stopBGM() {
+    bgmAudio.pause();
+    bgmAudio.currentTime = 0;
+  }
 
   function playBoing() {
     try {
@@ -126,6 +141,7 @@
     if (gameState === 'start' || gameState === 'gameover') {
       gameState = 'playing';
       initGame();
+      startBGM();
       return;
     }
     if (gameState !== 'playing') return;
@@ -179,6 +195,7 @@
       if (by > GY() - 10) {
         gameState = 'gameover';
         if (score > highScore) highScore = score;
+        stopBGM();
         gameOverAudio.currentTime = 0;
         gameOverAudio.play().catch(() => {});
       }
