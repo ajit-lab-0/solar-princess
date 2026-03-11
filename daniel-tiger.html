@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Daniel Tiger's Fruit Run</title>
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <link href="https://fonts.googleapis.com/css2?family=Comic+Neue:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #87CEEB; overflow: hidden; user-select: none; touch-action: none; }
+    canvas { display: block; }
+    #back {
+      position: absolute;
+      top: 14px; left: 14px;
+      background: rgba(255,255,255,0.85);
+      border: none; border-radius: 20px;
+      padding: 7px 16px;
+      font-family: 'Comic Neue', 'Comic Sans MS', cursive;
+      font-size: 17px; cursor: pointer;
+      color: #cc44aa; font-weight: bold;
+      text-decoration: none;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+      z-index: 10;
+    }
+  </style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<a id="back" href="index.html">← Back</a>
+<script>
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+
+  function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+  resize();
+  window.addEventListener('resize', resize);
+
+  // ---- Images ----
+  const danielImg = new Image(); danielImg.src = 'daniel-tiger.png';
+
+  // ---- Audio ----
+  let audioCtx = null;
+
+  const bgmAudio      = new Audio('daniel tiger bgm.m4a');
+  bgmAudio.loop       = true;
+  bgmAudio.volume     = 0.6;
+  const gameOverAudio = new Audio('peaches.m4a');
+
+  function startBGM() {
+    gameOverAudio.pause();
+    gameOverAudio.currentTime = 0;
+    bgmAudio.currentTime = 0;
+    bgmAudio.play().catch(() => {});
+  }
+
+  function stopBGM() {
+    bgmAudio.pause();
+    bgmAudio.currentTime = 0;
+  }
+
+  function getAudio() {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    return audioCtx;
+  }
+
+  function playPing() {
+    try {
+      const ac = getAudio();
+      const now = ac.currentTime;
+      const osc = ac.createOscillator();
+      const gain = ac.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = 1318; // E6 — bright ping
+      gain.gain.setValueAtTime(0.45, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+      osc.connect(gain); gain.connect(ac.destination);
+      osc.start(now); osc.stop(now + 0.4);
+    } catch(e) {}
+  }
+
+  function playTong() {
+    try {
+      const ac = getAudio();
+      const now = ac.currentTime;
+      const osc = ac.createOscillator();
+      const gain = ac.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(160, now);
+      osc.frequency.exponentialRampToValueAtTime(55, now + 0.55);
+      gain.gain.setValueAtTime(0.65, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.75);
+      osc.connect(gain); gain.connect(ac.destination);
+      osc.start(now); osc.stop(now + 0.8);
+    } catch(e) {}
+  }
+
+  // ---- Layout helpers ----
+  function GROUND_Y()   { return canvas.height * 0.78; }
+  function DANIEL_X()   { return canvas.width  * 0.18; }
+  function CHAR_SIZE()  { return Math.min(canvas.width, canvas.height) * 0.18; }
+  function FRUIT_SIZE() { return Math.min(canvas.width, canvas.height) * 0.14; }
+
+  // ---- Fruit data ----
+  const GOOD_FRUITS = ['🍎','🍊','🍋','🍇','🍓','🍌','🍒','🍍','🥭','🫐','🍈','🍏'];
+  const PEACH = '🍑';
+
+  // ---- State ----
+  let gameState = 'start';
+  let score = 0, highScore = 0;
+  let fruits = [];
+  let particles = [];
+  let frameCount = 0;
+  let gameSpeed = 0;
+  let spawnTimer = 0;
+  let spawnInterval = 0;
+  let peachChance = 0;
+  let brickOffset = 0;
+  let runFrame = 0, runTimer = 0;
+
+  // Daniel physics
+  let danielY = 0;   // pixels above ground (positive = in air)
+  let danielVY = 0;
+  let isJumping = false;
+
+  function JUMP_VEL()  { return canvas.height * 0.034; }
+  function GRAVITY()   { return canvas.height * 0.0016; }
+
+  function initGame() {
+    score = 0;
+    fruits = [];
+    particles = [];
+    frameCount = 0;
+    gameSpeed = canvas.width * 0.006;
+    spawnTimer = 80;
+    spawnInterval = 110;
+    peachChance = 0.12;
+    danielY = 0;
+    danielVY = 0;
+    isJumping = false;
+    runFrame = 0;
+    runTimer = 0;
+  }
+
+  function spawnFruit() {
+    const isPeach = Math.random() < peachChance;
+    const emoji = isPeach ? PEACH : GOOD_FRUITS[Math.floor(Math.random() * GOOD_FRUITS.length)];
+    fruits.push({ emoji, isPeach, x: canvas.width + FRUIT_SIZE() * 1.2, scored: false });
+  }
+
+  function onTap() {
+    if (gameState === 'start' || gameState === 'gameover') {
+      gameState = 'playing';
+      initGame();
+      startBGM();
+      return;
+    }
+    if (gameState !== 'playing') return;
+    if (!isJumping) {
+      danielVY = JUMP_VEL();
+      isJumping = true;
+    }
+  }
+
+  canvas.addEventListener('click', onTap);
+  canvas.addEventListener('touchstart', e => { e.preventDefault(); onTap(); }, { passive: false });
+
+  // ---- Update ----
+  function update() {
+    frameCount++;
+
+    // Difficulty ramp
+    const level = frameCount / 600; // ~1 level per 10 seconds at 60fps
+    gameSpeed = canvas.width * (0.006 + level * 0.002);
+    spawnInterval = Math.max(50, 110 - level * 15);
+    peachChance = Math.min(0.58, 0.12 + level * 0.07);
+
+    // Brick parallax scroll
+    brickOffset += gameSpeed * 0.35;
+
+    // Daniel jump physics
+    if (isJumping) {
+      danielY += danielVY;
+      danielVY -= GRAVITY();
+      if (danielY <= 0) { danielY = 0; danielVY = 0; isJumping = false; }
+    }
+
+    // Running bobble animation
+    runTimer++;
+    if (runTimer > 7) { runTimer = 0; runFrame = (runFrame + 1) % 2; }
+
+    // Spawn fruits
+    spawnTimer--;
+    if (spawnTimer <= 0) {
+      spawnFruit();
+      spawnTimer = spawnInterval + Math.floor(Math.random() * 30 - 15);
+    }
+
+    // Move fruits left
+    for (const f of fruits) { f.x -= gameSpeed; }
+
+    // Collision detection
+    const cs = CHAR_SIZE();
+    const fs = FRUIT_SIZE();
+    const gY = GROUND_Y();
+    const dx = DANIEL_X();
+    const feetY = gY - danielY;
+
+    // Daniel bounding box (slightly inset for fairness)
+    const dL = dx - cs * 0.28;
+    const dR = dx + cs * 0.28;
+    const dT = feetY - cs * 0.90;
+    const dB = feetY - cs * 0.05;  // a little off ground so sliding past counts
+
+    for (const f of fruits) {
+      if (f.scored) continue;
+      const fR2 = fs * 0.58; // circle radius
+      const fL = f.x - fR2 * 0.7;
+      const fR = f.x + fR2 * 0.7;
+      const fT = gY - fR2 * 2 - 4;
+      const fB = gY - 4;
+
+      if (dR > fL && dL < fR && dB > fT && dT < fB) {
+        f.scored = true;
+        if (f.isPeach) {
+          playTong();
+          stopBGM();
+          gameOverAudio.currentTime = 0;
+          gameOverAudio.play().catch(() => {});
+          gameState = 'gameover';
+          if (score > highScore) highScore = score;
+          spawnBurst(f.x, gY - fs * 0.58 - 4, 18, ['#ff6600','#ff9900','#ffcc00','#ff3300'], 8);
+        } else {
+          playPing();
+          score++;
+          spawnBurst(f.x, gY - fs * 0.58 - 4, 8, ['#ffdd00','#ff6b6b','#66ccff','#ff99cc','#88ff44'], 5);
+        }
+      }
+    }
+
+    fruits = fruits.filter(f => f.x > -FRUIT_SIZE() * 2 && !f.scored);
+
+    // Particles
+    for (const p of particles) { p.x += p.vx; p.y += p.vy; p.vy += 0.18; p.life--; }
+    particles = particles.filter(p => p.life > 0);
+  }
+
+  function spawnBurst(x, y, count, colors, size) {
+    for (let i = 0; i < count; i++) {
+      const angle = (Math.PI * 2 / count) * i;
+      const speed = 2 + Math.random() * 3.5;
+      particles.push({
+        x, y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed - 2.5,
+        life: 38, maxLife: 38,
+        color: colors[i % colors.length], size,
+      });
+    }
+  }
+
+  // ---- Draw helpers ----
+
+  function drawSun(sx, sy) {
+    const r = Math.min(canvas.width, canvas.height) * 0.052;
+    const glow = ctx.createRadialGradient(sx, sy, r * 0.4, sx, sy, r * 2.6);
+    glow.addColorStop(0, 'rgba(255,235,80,0.55)');
+    glow.addColorStop(1, 'rgba(255,200,50,0)');
+    ctx.fillStyle = glow;
+    ctx.beginPath(); ctx.arc(sx, sy, r * 2.6, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#FFD700';
+    ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#FFD700'; ctx.lineWidth = 2.5;
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.moveTo(sx + Math.cos(a) * r * 1.35, sy + Math.sin(a) * r * 1.35);
+      ctx.lineTo(sx + Math.cos(a) * r * 1.95, sy + Math.sin(a) * r * 1.95);
+      ctx.stroke();
+    }
+  }
+
+  function drawCloud(x, y, s) {
+    ctx.fillStyle = 'rgba(255,255,255,0.90)';
+    ctx.beginPath();
+    ctx.arc(x,            y,            s * 0.50, 0, Math.PI * 2);
+    ctx.arc(x + s * 0.44, y - s * 0.10, s * 0.38, 0, Math.PI * 2);
+    ctx.arc(x + s * 0.86, y + s * 0.04, s * 0.42, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function drawBrickWall() {
+    const gY = GROUND_Y();
+    const wallTop = gY * 0.30;
+    const wallH = gY - wallTop;
+    const bH = Math.max(20, canvas.height * 0.036);
+    const bW = bH * 2.6;
+    const mortar = 3;
+    const rows = Math.ceil(wallH / (bH + mortar)) + 1;
+
+    const off = brickOffset % (bW + mortar);
+
+    for (let row = -1; row <= rows; row++) {
+      const y = wallTop + row * (bH + mortar);
+      const stagger = (row % 2 === 0) ? 0 : (bW + mortar) / 2;
+      const cols = Math.ceil(canvas.width / (bW + mortar)) + 2;
+
+      for (let col = -1; col <= cols; col++) {
+        const x = col * (bW + mortar) + stagger - off;
+        // skip bricks fully outside wall bounds
+        if (y + bH < wallTop || y > wallTop + wallH) continue;
+        const g = ctx.createLinearGradient(x, y, x, y + bH);
+        g.addColorStop(0, '#c96040');
+        g.addColorStop(0.5, '#b04a2a');
+        g.addColorStop(1, '#8c3318');
+        ctx.fillStyle = g;
+        ctx.fillRect(x + mortar, Math.max(y + mortar, wallTop), bW - mortar, bH - mortar);
+        // highlight
+        ctx.fillStyle = 'rgba(255,210,190,0.20)';
+        ctx.fillRect(x + mortar + 2, Math.max(y + mortar + 2, wallTop), bW - mortar - 4, 3);
+      }
+
+      // horizontal mortar line (clamp to wall area)
+      if (y >= wallTop && y <= wallTop + wallH) {
+        ctx.fillStyle = '#d4c0a8';
+        ctx.fillRect(0, y, canvas.width, mortar);
+      }
+    }
+
+    // Wall top cap
+    ctx.fillStyle = '#c0a882';
+    ctx.fillRect(0, wallTop - 10, canvas.width, 10);
+    ctx.fillStyle = 'rgba(0,0,0,0.10)';
+    ctx.fillRect(0, wallTop - 10, canvas.width, 3);
+  }
+
+  function drawBackground() {
+    // Sky
+    const sky = ctx.createLinearGradient(0, 0, 0, GROUND_Y());
+    sky.addColorStop(0, '#87CEEB');
+    sky.addColorStop(1, '#c8eaf8');
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, canvas.width, GROUND_Y());
+
+    drawSun(canvas.width * 0.85, canvas.height * 0.11);
+    drawCloud(canvas.width * 0.12, canvas.height * 0.09, 58);
+    drawCloud(canvas.width * 0.50, canvas.height * 0.06, 72);
+    drawCloud(canvas.width * 0.75, canvas.height * 0.12, 46);
+
+    drawBrickWall();
+
+    // Sidewalk
+    const gY = GROUND_Y();
+    ctx.fillStyle = '#c8a868';
+    ctx.fillRect(0, gY, canvas.width, canvas.height - gY);
+    ctx.fillStyle = '#d8ba7a';
+    ctx.fillRect(0, gY, canvas.width, 6);
+    ctx.fillStyle = 'rgba(0,0,0,0.08)';
+    ctx.fillRect(0, gY, canvas.width, 3);
+
+    // Sidewalk cracks/lines for texture
+    ctx.strokeStyle = 'rgba(160,120,50,0.25)';
+    ctx.lineWidth = 1.5;
+    for (let lx = 0; lx < canvas.width; lx += canvas.width * 0.25) {
+      ctx.beginPath();
+      ctx.moveTo(lx, gY + 4);
+      ctx.lineTo(lx, canvas.height);
+      ctx.stroke();
+    }
+  }
+
+  function drawDaniel() {
+    const gY = GROUND_Y();
+    const cs = CHAR_SIZE();
+    const dx = DANIEL_X();
+    const feetY = gY - danielY;
+
+    // Shadow (shrinks as Daniel goes higher)
+    const shadowScale = Math.max(0.15, 1 - danielY / (canvas.height * 0.3));
+    ctx.save();
+    ctx.globalAlpha = 0.18 * shadowScale;
+    ctx.fillStyle = '#333';
+    ctx.beginPath();
+    ctx.ellipse(dx, gY + 4, cs * 0.38 * shadowScale, cs * 0.09, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    if (danielImg.complete && danielImg.naturalWidth) {
+      const w = cs * (danielImg.naturalWidth / danielImg.naturalHeight);
+      ctx.drawImage(danielImg, dx - w / 2, feetY - cs, w, cs);
+    } else {
+      // Placeholder emoji with running bob
+      const bob = (!isJumping && runFrame === 0) ? 3 : 0;
+      ctx.font = `${cs}px serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText('🐯', dx, feetY + bob);
+    }
+  }
+
+  function drawFruits() {
+    const fs = FRUIT_SIZE();
+    const gY = GROUND_Y();
+    const t = Date.now();
+    const r = fs * 0.58; // circle radius
+
+    for (const f of fruits) {
+      const cy = gY - r - 4; // center Y: sits just above ground
+
+      // Solid opaque circle — always visible no matter what
+      if (f.isPeach) {
+        const pulse = 0.6 + Math.sin(t / 180) * 0.4;
+        ctx.fillStyle = `hsl(20, 100%, ${Math.round(50 + pulse * 12)}%)`;
+      } else {
+        ctx.fillStyle = '#fffbe6';
+      }
+      ctx.beginPath();
+      ctx.arc(f.x, cy, r, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Colored border
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = f.isPeach ? '#cc2200' : '#aaddaa';
+      ctx.stroke();
+
+      // Emoji on top
+      ctx.font = `${fs * 0.85}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(f.emoji, f.x, cy);
+
+      // "JUMP!" label when peach is close
+      if (f.isPeach && f.x < canvas.width * 0.65 && f.x > canvas.width * 0.20) {
+        const bob = Math.abs(Math.sin(t / 280)) * 8;
+        const lfs = Math.round(fs * 0.5);
+        ctx.font = `bold ${lfs}px "Comic Neue", cursive`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+        ctx.lineWidth = 4; ctx.strokeStyle = 'white';
+        ctx.strokeText('JUMP! 👆', f.x, cy - r - 8 - bob);
+        ctx.fillStyle = '#ff2200';
+        ctx.fillText('JUMP! 👆', f.x, cy - r - 8 - bob);
+      }
+    }
+  }
+
+  function drawParticles() {
+    for (const p of particles) {
+      ctx.save();
+      ctx.globalAlpha = p.life / p.maxLife;
+      ctx.fillStyle = p.color;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  function drawScore() {
+    const fs = Math.round(Math.min(canvas.width, canvas.height) * 0.075);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    ctx.font = `bold ${fs}px "Comic Neue", cursive`;
+    ctx.lineWidth = 5; ctx.strokeStyle = 'rgba(0,0,0,0.28)';
+    ctx.strokeText(`🍎 ${score}`, canvas.width / 2, 14);
+    ctx.fillStyle = 'white';
+    ctx.fillText(`🍎 ${score}`, canvas.width / 2, 14);
+    if (highScore > 0) {
+      const fs2 = Math.round(fs * 0.48);
+      ctx.font = `${fs2}px "Comic Neue", cursive`;
+      ctx.lineWidth = 3;
+      ctx.strokeText(`Best: ${highScore}`, canvas.width / 2, 14 + fs + 6);
+      ctx.fillText(`Best: ${highScore}`, canvas.width / 2, 14 + fs + 6);
+    }
+  }
+
+  function drawOverlay(title, titleColor, lines, tapMsg) {
+    ctx.fillStyle = 'rgba(0,0,20,0.52)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const cx = canvas.width / 2, cy = canvas.height / 2;
+    const fs = Math.round(Math.min(canvas.width, canvas.height) * 0.088);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = `bold ${fs}px "Comic Neue", cursive`;
+    ctx.lineWidth = 7; ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+    ctx.strokeText(title, cx, cy - fs * 1.5);
+    ctx.fillStyle = titleColor;
+    ctx.fillText(title, cx, cy - fs * 1.5);
+    const lfs = Math.round(fs * 0.48);
+    ctx.font = `${lfs}px "Comic Neue", cursive`; ctx.lineWidth = 3;
+    lines.forEach((line, i) => {
+      ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+      ctx.strokeText(line, cx, cy - fs * 0.1 + i * lfs * 1.6);
+      ctx.fillStyle = 'white';
+      ctx.fillText(line, cx, cy - fs * 0.1 + i * lfs * 1.6);
+    });
+    const alpha = 0.65 + Math.sin(Date.now() / 380) * 0.35;
+    ctx.globalAlpha = alpha;
+    ctx.font = `bold ${Math.round(fs * 0.55)}px "Comic Neue", cursive`;
+    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+    ctx.strokeText(tapMsg, cx, cy + fs * 1.5);
+    ctx.fillStyle = '#ffd700';
+    ctx.fillText(tapMsg, cx, cy + fs * 1.5);
+    ctx.globalAlpha = 1;
+  }
+
+  // ---- Game loop ----
+  function loop() {
+    requestAnimationFrame(loop);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Slow idle scroll on start/gameover
+    if (gameState !== 'playing') {
+      brickOffset += gameState === 'start' ? 1 : 0;
+    }
+
+    drawBackground();
+    drawParticles();
+    drawDaniel();
+    drawFruits();
+
+    if (gameState === 'playing') {
+      update();
+      drawScore();
+    }
+
+    if (gameState === 'start') {
+      drawOverlay(
+        "Daniel Tiger's Fruit Run! 🐯", '#ff9900',
+        ['Run along the wall and eat fruits!', 'But JUMP over the peach! 🍑', 'Tap to jump!'],
+        '👆 Tap to Start!'
+      );
+    }
+
+    if (gameState === 'gameover') {
+      const newHS = score > 0 && score >= highScore;
+      drawOverlay(
+        'Oh no! 😢', '#ff5555',
+        [
+          'You ate the peach! 🍑',
+          `Fruits eaten: ${score}`,
+          newHS ? '🌟 New High Score! 🌟' : `Best: ${highScore}`,
+        ],
+        '👆 Tap to Play Again!'
+      );
+    }
+  }
+
+  requestAnimationFrame(loop);
+</script>
+</body>
+</html>
