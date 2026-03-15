@@ -38,6 +38,14 @@ const CELEBRATION_AUDIO_SRC = 'visions.m4a';
 
 // === CONSTANTS ===
 const GEM_COUNT = 10;
+const GEM_COLORS = [
+  { hi: '#ffff99', mid: '#ffcc00', lo: '#886600', glow: '#ffdd00' }, // yellow
+  { hi: '#ffcc88', mid: '#ff8800', lo: '#883300', glow: '#ff8800' }, // orange
+  { hi: '#88ccff', mid: '#0088ff', lo: '#003388', glow: '#44aaff' }, // blue
+  { hi: '#adffd4', mid: '#00e86a', lo: '#005c28', glow: '#00ff77' }, // green
+  { hi: '#ff9999', mid: '#ff2200', lo: '#660000', glow: '#ff4422' }, // red
+  { hi: '#dd99ff', mid: '#9900ff', lo: '#330066', glow: '#bb44ff' }, // purple
+];
 
 // === STATE ===
 let gems = [];
@@ -89,6 +97,7 @@ function buildGems(W, H) {
       ox: x, oy: y,      // original position
       size, offsets,
       placed: false,
+      colorIdx: i % GEM_COLORS.length,
       // relative placement on Bruno (0..1 within Bruno bounds)
       brunoRx: 0.15 + pr() * 0.70,
       brunoRy: 0.15 + pr() * 0.70,
@@ -223,9 +232,10 @@ function drawGem(gem) {
   const pts = gemPoints(gem);
   const { x, y, size } = gem;
   const isDragged = dragging && dragging.gem === gem;
+  const col = GEM_COLORS[gem.colorIdx] || GEM_COLORS[0];
 
   ctx.save();
-  ctx.shadowColor = '#00ff77';
+  ctx.shadowColor = col.glow;
   ctx.shadowBlur = isDragged ? 32 : 18;
 
   ctx.beginPath();
@@ -234,10 +244,10 @@ function drawGem(gem) {
   ctx.closePath();
 
   const grad = ctx.createRadialGradient(x-size*0.2, y-size*0.2, size*0.05, x, y, size*1.1);
-  grad.addColorStop(0, '#adffd4');
-  grad.addColorStop(0.3, '#00e86a');
-  grad.addColorStop(0.7, '#00a84a');
-  grad.addColorStop(1, '#005c28');
+  grad.addColorStop(0, col.hi);
+  grad.addColorStop(0.35, col.mid);
+  grad.addColorStop(0.75, col.mid);
+  grad.addColorStop(1, col.lo);
   ctx.fillStyle = grad;
   ctx.fill();
   ctx.restore();
@@ -247,7 +257,7 @@ function drawGem(gem) {
   ctx.moveTo(pts[0].x, pts[0].y);
   pts.slice(1).forEach(p => ctx.lineTo(p.x, p.y));
   ctx.closePath();
-  ctx.strokeStyle = '#003318';
+  ctx.strokeStyle = col.lo;
   ctx.lineWidth = 1.5;
   ctx.stroke();
 
