@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Encanto</title>
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <link href="https://fonts.googleapis.com/css2?family=Comic+Neue:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #000; overflow: hidden; user-select: none; touch-action: none; }
+    canvas { display: block; cursor: grab; }
+    canvas.dragging { cursor: grabbing; }
+    #back {
+      position: absolute;
+      top: 14px; left: 14px;
+      background: rgba(255,255,255,0.12);
+      border: none; border-radius: 20px;
+      padding: 7px 16px;
+      font-family: 'Comic Neue', 'Comic Sans MS', cursive;
+      font-size: 17px; cursor: pointer;
+      color: #aaffcc; font-weight: bold;
+      text-decoration: none;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+      z-index: 10;
+    }
+  </style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<a id="back" href="index.html">← Back</a>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+// === AUDIO ===
+const CELEBRATION_AUDIO_SRC = 'visions.m4a';
+
+// === CONSTANTS ===
+const GEM_COUNT = 10;
+
+// === STATE ===
+let gems = [];
+let dragging = null;   // { gem, offX, offY }
+let bruno = { x: 0, y: 0, w: 0, h: 0 };
+let allPlaced = false;
+let celebrationStart = null;
+
+// === BRUNO IMAGE ===
+const brunoImg = new Image();
+brunoImg.src = 'bruno.jpg';
+brunoImg.onload = () => draw();
+
+// === SEEDED RANDOM ===
+function seededRand(seed) {
+  let s = seed >>> 0;
+  return () => {
+    s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+    return s / 0x100000000;
+  };
+}
+
+// === GEM SHAPE (stored as offsets from center so we can move freely) ===
+function makeGemOffsets(size, sides, jaggedness, rotation, rng) {
+  const pts = [];
+  for (let i = 0; i < sides; i++) {
+    const angle = (i / sides) * Math.PI * 2 - Math.PI / 2 + rotation;
+    const r = size * (1 - jaggedness + rng() * jaggedness * 2);
+    pts.push({ dx: Math.cos(angle) * r, dy: Math.sin(angle) * r });
+  }
+  return pts;
+}
+
+function buildGems(W, H) {
+  const rng = seededRand(42);
+  gems = [];
+  for (let i = 0; i < GEM_COUNT; i++) {
+    const x = 0.10 * W + rng() * 0.80 * W;
+    const y = 0.52 * H + rng() * 0.32 * H;
+    const size = 20 + rng() * 18;
+    const sides = 5 + Math.floor(rng() * 4);
+    const jaggedness = 0.22 + rng() * 0.32;
+    const rotation = rng() * Math.PI * 2;
+    const offsets = makeGemOffsets(size, sides, jaggedness, rotation, rng);
+    // pre-compute placement position on Bruno (seeded per gem index)
+    const pr = seededRand(i * 991 + 7);
+    gems.push({
+      x, y,
+      ox: x, oy: y,      // original position
+      size, offsets,
+      placed: false,
+      // relative placement on Bruno (0..1 within Bruno bounds)
+      brunoRx: 0.15 + pr() * 0.70,
+      brunoRy: 0.15 + pr() * 0.70,
+    });
+  }
+}
+
+function gemPoints(gem) {
+  return gem.offsets.map(o => ({ x: gem.x + o.dx, y: gem.y + o.dy }));
+}
+
+// === DRAW CAVE ===
+function drawCave(W, H) {
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#010302');
+  bg.addColorStop(0.5, '#030a06');
+  bg.addColorStop(1, '#010402');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  const glow = ctx.createRadialGradient(W/2, H*0.6, 0, W/2, H*0.6, W*0.55);
+  glow.addColorStop(0, 'rgba(0,80,35,0.12)');
+  glow.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, W, H);
+
+  // ceiling stalactites
+  ctx.fillStyle = '#060e08';
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  [[0,0],[0,H*0.08],[W*0.05,H*0.18],[W*0.09,H*0.07],[W*0.14,H*0.22],[W*0.20,H*0.10],
+   [W*0.26,H*0.26],[W*0.31,H*0.08],[W*0.37,H*0.20],[W*0.43,H*0.06],
+   [W*0.49,H*0.24],[W*0.55,H*0.09],[W*0.61,H*0.21],[W*0.67,H*0.07],
+   [W*0.73,H*0.25],[W*0.79,H*0.10],[W*0.85,H*0.20],[W*0.91,H*0.08],
+   [W*0.96,H*0.19],[W,H*0.07],[W,0]
+  ].forEach(([x,y]) => ctx.lineTo(x, y));
+  ctx.closePath(); ctx.fill();
+
+  // floor stalagmites
+  ctx.fillStyle = '#060e08';
+  ctx.beginPath();
+  ctx.moveTo(0, H); ctx.lineTo(0, H*0.88);
+  [[W*0.04,H*0.76],[W*0.08,H*0.89],[W*0.13,H*0.80],[W*0.18,H*0.90],
+   [W*0.24,H*0.74],[W*0.29,H*0.88],[W*0.35,H*0.81],[W*0.40,H*0.92],
+   [W*0.46,H*0.77],[W*0.51,H*0.89],[W*0.57,H*0.82],[W*0.62,H*0.90],
+   [W*0.68,H*0.75],[W*0.73,H*0.88],[W*0.79,H*0.79],[W*0.84,H*0.91],
+   [W*0.90,H*0.77],[W*0.95,H*0.89],[W,H*0.85]
+  ].forEach(([x,y]) => ctx.lineTo(x, y));
+  ctx.lineTo(W, H); ctx.closePath(); ctx.fill();
+
+  // left wall
+  ctx.fillStyle = '#040c07';
+  ctx.beginPath();
+  ctx.moveTo(0,0); ctx.lineTo(W*0.07,0); ctx.lineTo(W*0.06,H*0.15);
+  ctx.lineTo(W*0.10,H*0.30); ctx.lineTo(W*0.05,H*0.50);
+  ctx.lineTo(W*0.09,H*0.70); ctx.lineTo(W*0.04,H); ctx.lineTo(0,H);
+  ctx.closePath(); ctx.fill();
+
+  // right wall
+  ctx.beginPath();
+  ctx.moveTo(W,0); ctx.lineTo(W*0.93,0); ctx.lineTo(W*0.94,H*0.18);
+  ctx.lineTo(W*0.90,H*0.35); ctx.lineTo(W*0.95,H*0.55);
+  ctx.lineTo(W*0.91,H*0.72); ctx.lineTo(W*0.96,H); ctx.lineTo(W,H);
+  ctx.closePath(); ctx.fill();
+}
+
+// === DRAW BRUNO ===
+function drawBruno(W, H) {
+  const bw = Math.min(W * 0.20, 180);
+  const bh = bw * 1.5;
+  const bx = W * 0.5 - bw / 2;
+  const by = H * 0.22;
+  bruno = { x: bx, y: by, w: bw, h: bh };
+
+  if (brunoImg.complete && brunoImg.naturalWidth > 0) {
+    ctx.save();
+    ctx.beginPath();
+    roundRect(ctx, bx, by, bw, bh, 14);
+    ctx.clip();
+    ctx.drawImage(brunoImg, bx, by, bw, bh);
+    ctx.restore();
+  } else {
+    ctx.fillStyle = '#1a3326';
+    ctx.beginPath();
+    roundRect(ctx, bx, by, bw, bh, 14);
+    ctx.fill();
+    ctx.font = `${bw * 0.45}px serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('🧔', bx + bw/2, by + bh/2);
+    ctx.textBaseline = 'alphabetic';
+  }
+
+  // glow border
+  ctx.save();
+  ctx.shadowColor = '#00ff77';
+  ctx.shadowBlur = allPlaced ? 40 : 12;
+  ctx.strokeStyle = allPlaced ? '#00ffaa' : '#00883a';
+  ctx.lineWidth = allPlaced ? 4 : 2.5;
+  ctx.beginPath();
+  roundRect(ctx, bx, by, bw, bh, 14);
+  ctx.stroke();
+  ctx.restore();
+
+  // drop-here hint when not all placed
+  if (!allPlaced) {
+    ctx.save();
+    ctx.font = `bold ${Math.min(W*0.028, 15)}px 'Comic Neue', cursive`;
+    ctx.fillStyle = 'rgba(180,255,210,0.65)';
+    ctx.textAlign = 'center';
+    ctx.fillText('drop gems here!', bx + bw/2, by + bh + 18);
+    ctx.restore();
+  }
+}
+
+// Safe roundRect fallback
+function roundRect(ctx, x, y, w, h, r) {
+  if (ctx.roundRect) {
+    ctx.roundRect(x, y, w, h, r);
+  } else {
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y); ctx.arcTo(x+w, y, x+w, y+r, r);
+    ctx.lineTo(x+w, y+h-r);  ctx.arcTo(x+w, y+h, x+w-r, y+h, r);
+    ctx.lineTo(x+r, y+h);    ctx.arcTo(x, y+h, x, y+h-r, r);
+    ctx.lineTo(x, y+r);      ctx.arcTo(x, y, x+r, y, r);
+    ctx.closePath();
+  }
+}
+
+// === DRAW GEM ===
+function drawGem(gem) {
+  const pts = gemPoints(gem);
+  const { x, y, size } = gem;
+  const isDragged = dragging && dragging.gem === gem;
+
+  ctx.save();
+  ctx.shadowColor = '#00ff77';
+  ctx.shadowBlur = isDragged ? 32 : 18;
+
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x, pts[0].y);
+  pts.slice(1).forEach(p => ctx.lineTo(p.x, p.y));
+  ctx.closePath();
+
+  const grad = ctx.createRadialGradient(x-size*0.2, y-size*0.2, size*0.05, x, y, size*1.1);
+  grad.addColorStop(0, '#adffd4');
+  grad.addColorStop(0.3, '#00e86a');
+  grad.addColorStop(0.7, '#00a84a');
+  grad.addColorStop(1, '#005c28');
+  ctx.fillStyle = grad;
+  ctx.fill();
+  ctx.restore();
+
+  // edge
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x, pts[0].y);
+  pts.slice(1).forEach(p => ctx.lineTo(p.x, p.y));
+  ctx.closePath();
+  ctx.strokeStyle = '#003318';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // specular highlight
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x, pts[0].y);
+  pts.slice(1).forEach(p => ctx.lineTo(p.x, p.y));
+  ctx.closePath();
+  ctx.clip();
+  const hl = ctx.createRadialGradient(x-size*0.25, y-size*0.3, 0, x-size*0.1, y-size*0.1, size*0.45);
+  hl.addColorStop(0, 'rgba(255,255,255,0.78)');
+  hl.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = hl;
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x, pts[0].y);
+  pts.slice(1).forEach(p => ctx.lineTo(p.x, p.y));
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+// === DRAW COUNTER ===
+function drawCounter(W) {
+  const placed = gems.filter(g => g.placed).length;
+  ctx.save();
+  ctx.font = `bold ${Math.min(W*0.042, 22)}px 'Comic Neue', cursive`;
+  ctx.fillStyle = '#aaffcc';
+  ctx.shadowColor = '#00ff77';
+  ctx.shadowBlur = 8;
+  ctx.textAlign = 'right';
+  ctx.fillText(`💎 ${placed} / ${GEM_COUNT}`, canvas.width - 20, 40);
+  ctx.restore();
+}
+
+// === CELEBRATION OVERLAY ===
+function drawCelebration(W, H) {
+  const now = performance.now();
+  if (!celebrationStart) celebrationStart = now;
+  const t = (now - celebrationStart) / 1000;
+
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,20,10,0.6)';
+  ctx.fillRect(0, 0, W, H);
+  ctx.textAlign = 'center';
+
+  ctx.font = `bold ${Math.min(W*0.09, 58)}px 'Comic Neue', cursive`;
+  ctx.fillStyle = '#00ffaa';
+  ctx.shadowColor = '#00ff77';
+  ctx.shadowBlur = 30;
+  ctx.fillText('✨ Bruno glows! ✨', W/2, H*0.5 - 20);
+
+  ctx.font = `${Math.min(W*0.045, 26)}px 'Comic Neue', cursive`;
+  ctx.fillStyle = '#ccffdd';
+  ctx.shadowBlur = 10;
+  ctx.fillText('All gems placed!', W/2, H*0.5 + 34);
+
+  // Shiny green rectangle
+  const fadeIn = Math.min(t / 0.5, 1); // fade in over 0.5s
+  const rw = Math.min(W * 0.72, 440);
+  const rh = Math.min(H * 0.12, 80);
+  const rx = W/2 - rw/2;
+  const ry = H * 0.64;
+  const rr = 20;
+
+  ctx.globalAlpha = fadeIn;
+  ctx.shadowColor = '#00ff77';
+  ctx.shadowBlur = 28 + 14 * Math.sin(t * 3);
+
+  const rectGrad = ctx.createLinearGradient(rx, ry, rx, ry + rh);
+  rectGrad.addColorStop(0,   '#88ffcc');
+  rectGrad.addColorStop(0.3, '#00ee77');
+  rectGrad.addColorStop(0.7, '#00bb55');
+  rectGrad.addColorStop(1,   '#006633');
+  ctx.fillStyle = rectGrad;
+  ctx.beginPath();
+  roundRect(ctx, rx, ry, rw, rh, rr);
+  ctx.fill();
+
+  // moving shimmer strip
+  const shimPos = ((t * 0.45) % 1.3 - 0.15) * rw;
+  const shimGrad = ctx.createLinearGradient(rx + shimPos - rw*0.12, ry, rx + shimPos + rw*0.12, ry);
+  shimGrad.addColorStop(0,   'rgba(255,255,255,0)');
+  shimGrad.addColorStop(0.5, 'rgba(255,255,255,0.55)');
+  shimGrad.addColorStop(1,   'rgba(255,255,255,0)');
+  ctx.save();
+  ctx.beginPath();
+  roundRect(ctx, rx, ry, rw, rh, rr);
+  ctx.clip();
+  ctx.fillStyle = shimGrad;
+  ctx.fillRect(rx + shimPos - rw*0.12, ry, rw*0.24, rh);
+  ctx.restore();
+
+  // border glow
+  ctx.shadowBlur = 20;
+  ctx.strokeStyle = '#aaffdd';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  roundRect(ctx, rx, ry, rw, rh, rr);
+  ctx.stroke();
+
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+// === MAIN DRAW ===
+function draw() {
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  drawCave(W, H);
+  drawBruno(W, H);
+
+  // placed gems on Bruno (behind unplaced)
+  gems.filter(g => g.placed && (!dragging || dragging.gem !== g)).forEach(drawGem);
+
+  // unplaced gems on cave floor
+  gems.filter(g => !g.placed && (!dragging || dragging.gem !== g)).forEach(drawGem);
+
+  // dragged gem on top
+  if (dragging) drawGem(dragging.gem);
+
+  drawCounter(W);
+  if (allPlaced) {
+    drawCelebration(W, H);
+    requestAnimationFrame(draw);
+  }
+}
+
+// === HIT TEST ===
+function pointInGem(gem, px, py) {
+  const pts = gemPoints(gem);
+  let inside = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const [xi, yi, xj, yj] = [pts[i].x, pts[i].y, pts[j].x, pts[j].y];
+    if ((yi > py) !== (yj > py) && px < (xj-xi)*(py-yi)/(yj-yi)+xi)
+      inside = !inside;
+  }
+  return inside;
+}
+
+function isOverBruno(x, y) {
+  const pad = 10;
+  return x >= bruno.x - pad && x <= bruno.x + bruno.w + pad
+      && y >= bruno.y - pad && y <= bruno.y + bruno.h + pad;
+}
+
+// === PLACE GEM ON BRUNO ===
+function placeGemOnBruno(gem) {
+  gem.x = bruno.x + gem.brunoRx * bruno.w;
+  gem.y = bruno.y + gem.brunoRy * bruno.h;
+  gem.placed = true;
+
+  if (gems.every(g => g.placed)) {
+    allPlaced = true;
+    if (CELEBRATION_AUDIO_SRC) {
+      new Audio(CELEBRATION_AUDIO_SRC).play().catch(() => {});
+    }
+  }
+}
+
+// === INPUT HELPERS ===
+function getPos(e) {
+  const rect = canvas.getBoundingClientRect();
+  const src = e.touches ? e.touches[0] : e;
+  return { x: src.clientX - rect.left, y: src.clientY - rect.top };
+}
+
+function onDown(e) {
+  if (allPlaced) return;
+  const { x, y } = getPos(e);
+  // hit-test gems top-to-bottom (last drawn = on top)
+  for (let i = gems.length - 1; i >= 0; i--) {
+    const gem = gems[i];
+    if (pointInGem(gem, x, y)) {
+      // allow re-dragging placed gems too
+      gem.placed = false;
+      dragging = { gem, offX: x - gem.x, offY: y - gem.y };
+      canvas.classList.add('dragging');
+      draw();
+      break;
+    }
+  }
+}
+
+function onMove(e) {
+  if (!dragging) return;
+  e.preventDefault();
+  const { x, y } = getPos(e);
+  dragging.gem.x = x - dragging.offX;
+  dragging.gem.y = y - dragging.offY;
+  draw();
+}
+
+function onUp(e) {
+  if (!dragging) return;
+  const gem = dragging.gem;
+  dragging = null;
+  canvas.classList.remove('dragging');
+
+  if (isOverBruno(gem.x, gem.y)) {
+    placeGemOnBruno(gem);
+  } else {
+    gem.x = gem.ox;
+    gem.y = gem.oy;
+  }
+  draw();
+}
+
+canvas.addEventListener('mousedown', onDown);
+canvas.addEventListener('mousemove', onMove);
+canvas.addEventListener('mouseup', onUp);
+canvas.addEventListener('touchstart', onDown, { passive: false });
+canvas.addEventListener('touchmove', onMove, { passive: false });
+canvas.addEventListener('touchend', onUp);
+
+// === RESIZE ===
+function resize() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  buildGems(canvas.width, canvas.height);
+  allPlaced = false;
+  celebrationStart = null;
+  dragging = null;
+  draw();
+}
+
+window.addEventListener('resize', resize);
+resize();
+</script>
+</body>
+</html>
